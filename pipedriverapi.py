@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-API_KEY = 'adc7bdaca33ac510f415fc01fa0a4aaaddb808ce'
+API_KEY = ''
 BASE_URL = 'https://api.pipedrive.com/v1'
 
 if not API_KEY:
