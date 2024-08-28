@@ -1,10 +1,10 @@
 import requests
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Query
 from pydantic import BaseModel
-
+from typing import Optional, Dict
 app = FastAPI()
-#please enter api key
-API_KEY = ''
+
+API_KEY = 'adc7bdaca33ac510f415fc01fa0a4aaaddb808ce'
 BASE_URL = 'https://api.pipedrive.com/v1'
 
 if not API_KEY:
@@ -13,12 +13,16 @@ if not API_KEY:
 class PersonCreate(BaseModel):
     name: str
     email: str = None
-    phone: str = None
 
 class OrganizationCreate(BaseModel):
     name: str
     address: str = None
     phone: str = None
+class LeadCreate(BaseModel):
+    title: str
+    person_id: int
+    organization_id: int
+    custom_fields: Optional[Dict[str, str]] = None 
 
 def check_person_exists(name: str):
     url = f'{BASE_URL}/persons/search'
@@ -78,7 +82,6 @@ def check_organization_exists(name: str):
     
     return None
 
-@app.post('/persons')
 def create_or_get_person(person: PersonCreate):
     # Check if the person already exists
     person_id = check_person_exists(person.name)
@@ -107,14 +110,10 @@ def create_or_get_person(person: PersonCreate):
     
     return {"id": result['data']['id']}
 
-@app.post('/organizations')
 def create_or_get_organization(organization: OrganizationCreate):
-    # Check if the organization already exists
     organization_id = check_organization_exists(organization.name)
     if organization_id:
         return {"id": organization_id}
-    
-    # Create a new organization
     url = f'{BASE_URL}/organizations'
     params = {'api_token': API_KEY}
     data = organization.dict()
@@ -136,6 +135,61 @@ def create_or_get_organization(organization: OrganizationCreate):
     
     return {"id": result['data']['id']}
 
+
+
+def check_lead_exists(email: str) -> str:
+
+    url = f'{BASE_URL}/leads'
+    params = {'api_token': API_KEY, 'email': email}
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        result = response.json()
+        if result.get('data'):
+            return result['data']['id']  # Return the lead ID if found
+    return None
+@app.get('/leader')
+def fetch_all_leads_from_api() -> dict:
+    url = f'{BASE_URL}/leads'
+    params = {
+        'api_token': API_KEY,
+        # 'sort_by': 'add_time', 
+        'start': 201,
+        
+    }
+    
+    response = requests.get(url, params=params)
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"API request failed with status code {response.status_code}"
+        )
+  
+@app.post('/lead')
+def create_lead(data: dict):
+    params = {'api_token': API_KEY}
+    url = f'{BASE_URL}/leads'
+    print(f"URL: {url}")
+    print(f"Request Data: {data}")
+
+    try:
+        response = requests.post(url, params=params, json=data)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
+        return response.json()
+    
+    except requests.RequestException as e:
+        # Log the full response content if available
+        error_detail = response.text if response else str(e)
+        print(f"Request failed with status code {response.status_code if response else 'unknown'}")
+        print(f"Response content: {error_detail}")
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"API request failed: {error_detail}"
+        )
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8000)

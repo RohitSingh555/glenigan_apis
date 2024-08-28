@@ -1,7 +1,19 @@
 import requests
 import math
 import json
+from pipedriverapi import create_or_get_person, create_or_get_organization
+from pydantic import BaseModel
+from typing import Optional
 
+# Define Pydantic models
+class PersonCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+class OrganizationCreate(BaseModel):
+    name: str
+  
 def fetch_projects(api_key):
     url = f"https://www.gleniganapi.com/glenigan/project/_search?key={api_key}"
     headers = {
@@ -36,7 +48,6 @@ def fetch_projects(api_key):
         data = response.json()
         
         total_projects = data.get('total', 0)
-        results = data.get('results', [])
         pages_count = math.ceil(total_projects / 50)
         
         print(f"Total Projects Found: {total_projects}")
@@ -132,7 +143,10 @@ def fetch_projects(api_key):
                 }
                 
                 projects_list.append(project_info)
-    
+
+        # Process first 10 projects
+      
+
     except requests.exceptions.RequestException as e:
         print(f"An error occurred: {e}")
 
