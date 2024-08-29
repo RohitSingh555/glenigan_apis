@@ -1,10 +1,16 @@
+import os
 import requests
 from fastapi import FastAPI, HTTPException, status, Query
 from pydantic import BaseModel
 from typing import Optional, Dict
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 app = FastAPI()
 
-API_KEY = 'adc7bdaca33ac510f415fc01fa0a4aaaddb808ce'
+API_KEY = os.getenv("PIPEDRIVE_API_KEY")
+
 BASE_URL = 'https://api.pipedrive.com/v1'
 
 if not API_KEY:
@@ -171,9 +177,6 @@ def fetch_all_leads_from_api() -> dict:
 def create_lead(data: dict):
     params = {'api_token': API_KEY}
     url = f'{BASE_URL}/leads'
-    print(f"URL: {url}")
-    print(f"Request Data: {data}")
-
     try:
         response = requests.post(url, params=params, json=data)
         response.raise_for_status()  # Raise an exception for HTTP errors

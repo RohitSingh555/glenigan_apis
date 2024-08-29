@@ -2,7 +2,7 @@
     "Office Names": "Marks and Spencer~Halliday Fraser Munro~Details Not Available",
     "KeyCard Full Contact": "Ms Helen Cowie",
     "Contract Stage": "Contract Awarded#Complete On Site",
-    "Site Name": "Northumberland Street, Newcastle-Upon-Tyne",
+    "Site Name": "Northumberland Street Newcastle-Upon-Tyne",
     "Phone": null,
     "Email": "N/A",
     "Job Title": "Regional Manager For North East",
