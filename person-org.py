@@ -93,6 +93,6 @@ def process_projects(projects_list: List[Dict]) -> Dict[str, Dict[str, str]]:
     
     return collected_ids
 if __name__ == "__main__":
-    file_path = 'projects_data.txt'  # Path to your file
+    file_path = 'projects_data.txt' 
     projects_list = read_projects_from_file(file_path)
     process_projects(projects_list)

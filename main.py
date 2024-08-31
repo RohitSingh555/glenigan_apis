@@ -1,25 +1,17 @@
 import requests
 import math
 import json
-from pipedriverapi import create_or_get_person, create_or_get_organization
-from pydantic import BaseModel
-from typing import Optional
+import os
+from dotenv import load_dotenv
 
-# Define Pydantic models
-class PersonCreate(BaseModel):
-    name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-
-class OrganizationCreate(BaseModel):
-    name: str
-  
+load_dotenv()
 def fetch_projects(api_key):
     url = f"https://www.gleniganapi.com/glenigan/project/_search?key={api_key}"
     headers = {
         "accept": "application/json",
         "Content-Type": "application/json"
     }
+  
     payload_template = {
         "query": {
             "bool": {
@@ -27,6 +19,14 @@ def fetch_projects(api_key):
                     {
                         "terms": {
                             "ProjectSize": ["Mega", "Large"]
+                        }
+                    },
+                    {
+                        "range": {
+                            "FirstPublished": {
+                                "gte": "now-1d",
+                                "lte": "now"
+                            }
                         }
                     }
                 ]
@@ -39,8 +39,10 @@ def fetch_projects(api_key):
                 }
             }
         ],
-        "size": 50 
+        "size": 50
     }
+
+    projects_list = []  
 
     try:
         response = requests.post(url, headers=headers, json=payload_template)
@@ -52,8 +54,6 @@ def fetch_projects(api_key):
         
         print(f"Total Projects Found: {total_projects}")
         print(f"Total Pages: {pages_count}")
-        
-        projects_list = []
         
         # Iterate through each page
         for page in range(pages_count):
@@ -144,9 +144,6 @@ def fetch_projects(api_key):
                 
                 projects_list.append(project_info)
 
-        # Process first 10 projects
-      
-
     except requests.exceptions.RequestException as e:
         print(f"An error occurred: {e}")
 
@@ -160,5 +157,5 @@ def fetch_projects(api_key):
         print(f"An error occurred while writing to file: {e}")
 
 if __name__ == "__main__":
-    api_key = "f3207c62-fe6a-4936-8900-a3397479c760"
+    api_key = os.getenv("GLENIGAN_API_KEY")
     fetch_projects(api_key)
