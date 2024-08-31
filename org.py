@@ -1,5 +1,4 @@
 import os
-import requests
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional, List
@@ -11,7 +10,6 @@ load_dotenv()
 app = FastAPI()
 
 API_KEY = os.getenv("PIPEDRIVE_API_KEY_ORG")
-
 BASE_URL = 'https://api.pipedrive.com/v1'
 
 if not API_KEY:
@@ -22,7 +20,7 @@ class Organization(BaseModel):
     name: str
     address: Optional[str] = None
     pop: Optional[int] = None
-    pohu: Optional[int] = None
+    pohd: Optional[int] = None
     ftve: Optional[int] = None
 
 class OrganizationRelationship(BaseModel):
@@ -34,68 +32,69 @@ class OrganizationWithRelationships(BaseModel):
     name: str
     address: Optional[str] = None
     pop: Optional[int] = None
-    pohu: Optional[int] = None
+    pohd: Optional[int] = None
     ftve: Optional[int] = None
     related_organizations: List[Organization] = []
     total_pop: int = 0
-    total_pohu: int = 0
+    total_pohd: int = 0
     total_ftve: int = 0
 
-@app.get("/organizations", response_model=List[OrganizationWithRelationships])
-async def get_organizations(start: int = 0, limit: int = 10):
+
+request_counter = 0
+counter_lock = asyncio.Lock()
+
+@app.get("/organizations")
+async def get_organizations(start: int = 0, limit: int = 100):
+    global request_counter
     async with aiohttp.ClientSession() as session:
-        organizations = await fetch_organizations(session, start, limit)
-        
-        all_related_org_ids = set()
-        org_relationships = {}
-        
-        for org in organizations:
-            relationships = await get_organization_relationships(session, org.id)
-            org_relationships[org.id] = relationships
-            related_org_ids = {rel.related_org_id for rel in relationships}
-            all_related_org_ids.update(related_org_ids)
-        
-        related_orgs = await get_organizations_data(session, all_related_org_ids)
-        related_org_map = {org.id: org for org in related_orgs}
-        
-        orgs_with_relationships = []
-        
-        for org in organizations:
-            relationships = org_relationships.get(org.id, [])
-            related_orgs_details = []
-            total_pop, total_pohu, total_ftve = 0, 0, 0
-            
-            for rel in relationships:
-                related_org = related_org_map.get(rel.related_org_id)
-                if related_org:
-                    related_orgs_details.append(related_org)
-                    total_pop += related_org.pop or 0
-                    total_pohu += related_org.pohu or 0
-                    total_ftve += related_org.ftve or 0
-            
-            if org not in related_orgs_details:
-                related_orgs_details.append(org)
+        all_related_org_ids_set = set()
+        pagination = {'start': start, 'limit': limit, 'more_items_in_collection': True}
+        updated_orgs = []
 
-            orgs_with_relationships.append(
-                OrganizationWithRelationships(
-                    id=org.id,
-                    name=org.name,
-                    address=org.address,
-                    pop=org.pop,
-                    pohu=org.pohu,
-                    ftve=org.ftve,
-                    related_organizations=related_orgs_details,
-                    total_pop=total_pop,
-                    total_pohu=total_pohu,
-                    total_ftve=total_ftve
-                )
-            )
+        while True:
+            organizations = []
+            fetched_data, pag_info = await fetch_organizations(session, pagination['start'], pagination['limit'])
+            organizations.extend(fetched_data)
             
-            await update_organization_totals(session, org.id, total_pop, total_pohu, total_ftve)
-        
-        return orgs_with_relationships
+            pag_info['start'] += pag_info['limit']
+            pagination.update(pag_info)
+           
+            org_relationships = {}
+            
+            for org in organizations:
+                if org.id not in all_related_org_ids_set:
+                    relationships = await get_organization_relationships(session, org.id)
+                    org_relationships[org.id] = relationships
+                    related_org_ids = [rel.related_org_id for rel in relationships]
+                    all_related_org_ids_set.update(related_org_ids)
+                    
+                    related_orgs = await get_organizations_data(session, related_org_ids)
+                    total_pop, total_pohd, total_ftve = 0, 0, 0
+                    for related_org in related_orgs:
+                        if related_org:
+                            total_pop += related_org.pop or 0
+                            total_pohd += related_org.pohd or 0
+                            total_ftve += related_org.ftve or 0
+                    
+                    for related_org in related_orgs:
+                        res = await update_organization_totals(session, related_org.id, total_pop, total_pohd, total_ftve)
+                        updated_orgs.append(res)
+                        
+                        async with counter_lock:
+                            request_counter += 1
+                            if request_counter % 8 == 0:
+                                await asyncio.sleep(2)
+                  
+            if not pag_info.get('more_items_in_collection', True):
+                break
 
-async def fetch_organizations(session: aiohttp.ClientSession, start: int, limit: int) -> List[Organization]:
+            print(f"Fetched {len(organizations)} organizations.")
+            print(f"Pagination Info: {pagination}")
+            
+        return updated_orgs
+
+async def fetch_organizations(session: aiohttp.ClientSession, start: int, limit: int):
+    global request_counter
     url = f'{BASE_URL}/organizations'
     params = {
         'api_token': API_KEY,
@@ -118,20 +117,34 @@ async def fetch_organizations(session: aiohttp.ClientSession, start: int, limit:
         )
     
     organizations = result['data']
+    pagination = result.get('additional_data', {}).get('pagination', {})
     
-    return [
-        Organization(
-            id=org['id'],
-            name=org['name'],
-            address=org.get('address'),
-            pop=org.get('ff657a191c25a9f57f6ee2186961198be9a77aaa'),
-            pohu=org.get('d54693358b3240110f7a963b45a9226bb3e41e30'),
-            ftve=org.get('5466322ffc600fa0d94bc88bb0a361de57035546')
-        )
-        for org in organizations
-    ]
+    async with counter_lock:
+        request_counter += 1
+        if request_counter % 8 == 0:
+            await asyncio.sleep(2)
+    
+    return (
+        [
+            Organization(
+                id=org['id'],
+                name=org['name'],
+                address=org.get('address'),
+                pop=int(org.get('ff657a191c25a9f57f6ee2186961198be9a77aaa') or 0),
+                pohd=int(org.get('d54693358b3240110f7a963b45a9226bb3e41e30') or 0),
+                ftve=int(org.get('5466322ffc600fa0d94bc88bb0a361de57035546') or 0)
+            )
+            for org in organizations
+        ],
+        {
+            'start': pagination.get('start', start),
+            'limit': pagination.get('limit', limit),
+            'more_items_in_collection': pagination.get('more_items_in_collection', True)
+        }
+    )
 
 async def get_organization_relationships(session: aiohttp.ClientSession, org_id: int) -> List[OrganizationRelationship]:
+    global request_counter
     url = f'{BASE_URL}/organizationRelationships?org_id={org_id}'
     params = {
         'api_token': API_KEY
@@ -152,7 +165,12 @@ async def get_organization_relationships(session: aiohttp.ClientSession, org_id:
         if 'related_objects' not in result or result['related_objects'] is None:
             return []
         
-        related_objects = result['related_objects']['organization']
+        related_objects = result['related_objects'].get('organization', {})
+        
+        async with counter_lock:
+            request_counter += 1
+            if request_counter % 8 == 0:
+                await asyncio.sleep(2)
         
         return [
             OrganizationRelationship(
@@ -162,7 +180,7 @@ async def get_organization_relationships(session: aiohttp.ClientSession, org_id:
             for org_id, org_details in related_objects.items()
         ]
 
-async def get_organizations_data(session: aiohttp.ClientSession, org_ids: set) -> List[Organization]:
+async def get_organizations_data(session: aiohttp.ClientSession, org_ids: List[int]) -> List[Organization]:
     tasks = []
     for org_id in org_ids:
         url = f'{BASE_URL}/organizations/{org_id}'
@@ -175,6 +193,7 @@ async def get_organizations_data(session: aiohttp.ClientSession, org_ids: set) -
     return responses
 
 async def fetch_organization(session: aiohttp.ClientSession, url: str, params: dict) -> Organization:
+    global request_counter
     async with session.get(url, params=params) as response:
         if response.status != 200:
             raise HTTPException(
@@ -192,19 +211,20 @@ async def fetch_organization(session: aiohttp.ClientSession, url: str, params: d
             id=org_data['id'],
             name=org_data['name'],
             address=org_data.get('address'),
-            pop=org_data.get('ff657a191c25a9f57f6ee2186961198be9a77aaa'),
-            pohu=org_data.get('d54693358b3240110f7a963b45a9226bb3e41e30'),
-            ftve=org_data.get('5466322ffc600fa0d94bc88bb0a361de57035546')
+            pop=int(org_data.get('ff657a191c25a9f57f6ee2186961198be9a77aaa') or 0),
+            pohd=int(org_data.get('d54693358b3240110f7a963b45a9226bb3e41e30') or 0),
+            ftve=int(org_data.get('5466322ffc600fa0d94bc88bb0a361de57035546') or 0)
         )
 
-async def update_organization_totals(session: aiohttp.ClientSession, org_id: int, total_pop: int, total_pohu: int, total_ftve: int):
+async def update_organization_totals(session: aiohttp.ClientSession, org_id: int, total_pop: int, total_pohd: int, total_ftve: int):
+    global request_counter
     url = f'{BASE_URL}/organizations/{org_id}'
     params = {
         'api_token': API_KEY
     }
     data = {
         'f694db99056280fa7287ec6e969531925d9281e0': total_pop,
-        '127511af7a0623e3b19f9ae5be3ae9d8f7651dca': total_pohu,
+        '127511af7a0623e3b19f9ae5be3ae9d8f7651dca': total_pohd,
         '70db755cdb252a09b19905a85e51d98523d96673': total_ftve
     }
     
@@ -214,6 +234,10 @@ async def update_organization_totals(session: aiohttp.ClientSession, org_id: int
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to update organization {org_id} with status code {response.status}"
             )
+        async with counter_lock:
+            request_counter += 1
+            if request_counter % 8 == 0:
+                await asyncio.sleep(2)
         return await response.json()
 
 if __name__ == '__main__':
