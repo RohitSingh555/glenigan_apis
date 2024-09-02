@@ -5,7 +5,9 @@ from typing import Optional, List
 from dotenv import load_dotenv
 import asyncio
 import aiohttp
-
+import schedule
+import threading
+import time
 load_dotenv()
 app = FastAPI()
 
@@ -43,7 +45,7 @@ class OrganizationWithRelationships(BaseModel):
 request_counter = 0
 counter_lock = asyncio.Lock()
 
-@app.get("/organizations")
+# @app.get("/organizations")
 async def get_organizations(start: int = 0, limit: int = 100):
     global request_counter
     async with aiohttp.ClientSession() as session:
@@ -239,7 +241,20 @@ async def update_organization_totals(session: aiohttp.ClientSession, org_id: int
             if request_counter % 8 == 0:
                 await asyncio.sleep(2)
         return await response.json()
+    
+def job():
+    print("job started")
+    asyncio.run(get_organizations(start=0, limit=100))
 
-if __name__ == '__main__':
+
+schedule.every().day.at("00:01").do(job)
+
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  
+if __name__ == "__main__":
+    
+    threading.Thread(target=run_scheduler, daemon=True).start()
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8000)

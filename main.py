@@ -3,8 +3,12 @@ import math
 import json
 import os
 from dotenv import load_dotenv
-
+import schedule
+import time
+import datetime
+from lead import read_projects_from_file, process_projects
 load_dotenv()
+
 def fetch_projects(api_key):
     url = f"https://www.gleniganapi.com/glenigan/project/_search?key={api_key}"
     headers = {
@@ -24,7 +28,7 @@ def fetch_projects(api_key):
                     {
                         "range": {
                             "FirstPublished": {
-                                "gte": "now-1d",
+                                "gte": "now-1y/y",
                                 "lte": "now"
                             }
                         }
@@ -156,6 +160,22 @@ def fetch_projects(api_key):
     except IOError as e:
         print(f"An error occurred while writing to file: {e}")
 
-if __name__ == "__main__":
+def job():
+    print(f"Job started at {datetime.datetime.now()}")
     api_key = os.getenv("GLENIGAN_API_KEY")
     fetch_projects(api_key)
+    print(f"Job completed at {datetime.datetime.now()}")
+
+
+schedule.every().day.at("00:01").do(job)
+def scheduled_task():
+    file_path = 'projects_data.txt'
+    projects_list = read_projects_from_file(file_path)
+    process_projects(projects_list)
+
+schedule.every().day.at("00:30").do(scheduled_task)
+
+if __name__ == "__main__":
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
