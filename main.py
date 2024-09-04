@@ -28,7 +28,7 @@ def fetch_projects(api_key):
                     {
                         "range": {
                             "FirstPublished": {
-                                "gte": "now-1y/y",
+                                "gte": "now-1d",
                                 "lte": "now"
                             }
                         }
@@ -167,13 +167,13 @@ def job():
     print(f"Job completed at {datetime.datetime.now()}")
 
 
-schedule.every().day.at("00:01").do(job)
+schedule.every().day.at("08:05").do(job)
 def scheduled_task():
     file_path = 'projects_data.txt'
     projects_list = read_projects_from_file(file_path)
     process_projects(projects_list)
 
-schedule.every().day.at("00:30").do(scheduled_task)
+schedule.every().day.at("08:06").do(scheduled_task)
 
 if __name__ == "__main__":
     while True:
